@@ -1,16 +1,25 @@
 module Main where
 
-import Data.List.Zipper
-import qualified Data.Maybe as M
+import              Data.List.Zipper
+import qualified    Data.Maybe as M
+import              HangManStr (getHangMan)
+import              Data.Maybe
+import              Network.HTTP.Client
+import qualified    Data.Aeson              as J
+import              Text.RawString.QQ
 
 -- Get a random word from a list of words(use an API maybe)
 -- A function prompt: begin the prompt by showing the blank spaces --> "Guess a letter: "
-    -- If the letter is present in word, add the letter to blank space or take off a life
+    -- If the letter is pre>sent in word, add the letter to blank space or take off a life
 -- If an already guessed letter is guessed again: Notify the user --> "Letter already guessed"
 -- If all letters are guessed correctly: Win else Lose
 
 getWord :: IO String
-getWord = return "hangman" -- http://random-word-api.herokuapp.com/word
+getWord = do
+    manager <- newManager defaultManagerSettings
+    request <- parseRequest "http://random-word-api.herokuapp.com/word"
+    response <- httpLbs request manager
+    return $ head . fromJust . J.decode $ responseBody response
 
 makeTemplate :: String -> IO (Zipper Char)
 makeTemplate = return . fromList
@@ -23,7 +32,10 @@ makeHangman = return $ fromList (replicate 6 False)
 -- hangman = [False, False, False, False, False, False]
 
 renderHangman :: Zipper Bool -> IO ()
-renderHangman _ = return ()
+renderHangman hangman = do
+    let
+        n = length $ filter id (toList hangman)
+    putStrLn (getHangMan n)
 
 renderTemplate :: Zipper Char -> String -> IO ()
 renderTemplate template word = do
@@ -88,7 +100,8 @@ prompt word hangman template = do
     newTemplate <- updateTemplate template userGuess
 
     if isTemplateComplete newTemplate
-        then
+        then do
+            putStrLn $ "The word was: " ++ word
             putStrLn "You are smart, you win!"
         else
             if newTemplate == template
@@ -100,8 +113,10 @@ prompt word hangman template = do
 
                     -- Check if hangman is hanged :)
                     if isHangmanComplete newHangman
-                        then
+                        then do
+                            putStrLn (getHangMan 6)
                             putStrLn "You lose!"
+                            putStrLn $ "The word was: " ++ word
                         else
                             prompt word newHangman newTemplate
                 else
