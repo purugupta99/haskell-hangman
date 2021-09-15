@@ -14,6 +14,9 @@ import              Text.RawString.QQ
 -- If an already guessed letter is guessed again: Notify the user --> "Letter already guessed"
 -- If all letters are guessed correctly: Win else Lose
 
+type Hangman = Int
+type Template = Zipper Char
+
 getWord :: IO String
 getWord = do
     manager <- newManager defaultManagerSettings
@@ -21,79 +24,53 @@ getWord = do
     response <- httpLbs request manager
     return $ head . fromJust . J.decode $ responseBody response
 
-makeTemplate :: String -> IO (Zipper Char)
+makeHangman :: IO Int
+makeHangman = return 0
+
+makeTemplate :: String -> IO Template
 makeTemplate = return . fromList
 
--- template = [h,a,n,g,m,a,n]
+renderHangman :: Hangman -> IO ()
+renderHangman hangman = putStrLn (getHangMan hangman)
 
-makeHangman :: IO (Zipper Bool)
-makeHangman = return $ fromList (replicate 6 False)
-
--- hangman = [False, False, False, False, False, False]
-
-renderHangman :: Zipper Bool -> IO ()
-renderHangman hangman = do
-    let
-        n = length $ filter id (toList hangman)
-    putStrLn (getHangMan n)
-
-renderTemplate :: Zipper Char -> String -> IO ()
+renderTemplate :: Template -> String -> IO ()
 renderTemplate template word = do
     let
-        finalData = foldl (\ mydata chr -> 
-                let
-                    t1 = M.fromMaybe '$' (safeCursor $ zippy mydata)
-                    tp = toPrint mydata
-                    toPrintNew = if t1 == chr
-                        then tp ++ "-"
-                        else tp ++ [chr]
-                    template2 = if t1 == chr
-                        then right $ zippy mydata
-                        else zippy mydata   
-                in Mydata {zippy=template2, toPrint=toPrintNew})
+        tmpLst = toList template
+        zippedTups = zip tmpLst word
+        finalStr = fmap (\(a, b) -> if a == '*' then b else '-') zippedTups
+    putStrLn finalStr
 
-            (Mydata {zippy=template, toPrint=""})
-            word
-    putStrLn $ toPrint finalData
-
-data Mydata = Mydata {
-    zippy :: Zipper Char,
-    toPrint :: String
-} deriving (Show)
-
-updateTemplate :: Zipper Char -> String -> IO (Zipper Char)
-updateTemplate oldTemp guess = do
+updateTemplate :: Template -> Char -> IO Template
+updateTemplate template userGuess = do
     let
-        userWord = head guess
-        newTemp = foldlz 
-            (\newT oldT -> 
-                if cursor oldT == userWord
+        newTemplate = foldlz (\new temp ->
+            let
+                currLetter = cursor temp
+            in
+                if currLetter == userGuess
                     then
-                        newT
+                        push '*' new
                     else
-                        push (cursor oldT) newT
+                        push currLetter new
+                    ) empty template
+    return $ start newTemplate
 
-            ) (empty :: Zipper Char) oldTemp
-    return $ start newTemp
+updateHangman :: Hangman -> IO Hangman
+updateHangman = return . succ
 
-updateHangman :: Zipper Bool -> IO (Zipper Bool)
-updateHangman = return . right . replace True
+isTemplateComplete :: Template -> Bool
+isTemplateComplete template = all (== '*') (toList template)
 
-isTemplateComplete :: Zipper Char -> Bool
-isTemplateComplete template =
-    let
-        lst = toList template
-    in
-        null lst
-
-isHangmanComplete :: Zipper Bool -> Bool
-isHangmanComplete hangman = all id (toList hangman)
+isHangmanComplete :: Hangman -> Bool
+isHangmanComplete hangman = 6 == hangman
 
 prompt word hangman template = do
     renderHangman hangman
     renderTemplate template word
 
-    userGuess <- getLine
+    userGuess' <- getLine
+    let userGuess = head userGuess'
     -- TODO: validate user input 
 
     -- Update template
@@ -130,6 +107,7 @@ main = do
     word <- getWord
 
     hangman <- makeHangman
+
     template <- makeTemplate word
 
     prompt word hangman template
